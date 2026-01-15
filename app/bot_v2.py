@@ -34,6 +34,7 @@ STARTUP_PDF = os.getenv("STARTUP_PDF", "").strip()
 
 # Video preview image (optional)
 SETUP_VIDEO_PREVIEW = os.getenv("SETUP_VIDEO_PREVIEW", "").strip()    # e.g. ./assets/setup_video_cover.jpg
+SETUP_VIDEO_FILE = os.getenv("SETUP_VIDEO_FILE", "").strip()  # e.g. ./assets/setup_video.mp4
 
 HELP_EMAIL = os.getenv("HELP_EMAIL", "support@example.com").strip()
 TELEGRAM_SUPPORT = os.getenv("TELEGRAM_SUPPORT", "@support").strip()
@@ -249,21 +250,56 @@ async def terms_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Email: {data.get('email','')}\n"
         f"Phone: {data.get('phone','')}\n"
         f"Region: {data.get('region','')}\n\n"
-        f"If you have any questions, message {TELEGRAM_SUPPORT} or email {HELP_EMAIL}."
+        f"If you have any questions, email {HELP_EMAIL}."
     )
 
-    # Send video preview + buttons as a separate message
-    # (This lets you attach the preview image and keep the buttons under it)
-    video_buttons = InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Open trading account", url=AFFILIATE_LINK)],
-            [InlineKeyboardButton("▶️ Watch setup video", url=SETUP_VIDEO_LINK)],
-        ]
+    # 1) Always send affiliate button (kept as a button message)
+    affiliate_buttons = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Open trading account", url=AFFILIATE_LINK)]]
+    )
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text="✅ Next step: open your trading account:",
+        reply_markup=affiliate_buttons,
     )
 
-    # Try to send preview image first (optional)
-    if _path_exists(SETUP_VIDEO_PREVIEW):
+    # 2) Send setup video INSIDE Telegram if we have an MP4 file
+    if _path_exists(SETUP_VIDEO_FILE):
         try:
+            with open(Path(SETUP_VIDEO_FILE), "rb") as f:
+                await context.bot.send_video(
+                    chat_id=query.message.chat_id,
+                    video=f,
+                    caption="▶️ Setup Video (plays inside Telegram)",
+                    supports_streaming=True,
+                )
+        except Exception as e:
+            log.warning("Failed to send SETUP_VIDEO_FILE as video: %s", e)
+
+            # Fallback: send preview + link
+            video_buttons = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("▶️ Watch setup video", url=SETUP_VIDEO_LINK)]]
+            )
+            if _path_exists(SETUP_VIDEO_PREVIEW):
+                with open(Path(SETUP_VIDEO_PREVIEW), "rb") as f:
+                    await context.bot.send_photo(
+                        chat_id=query.message.chat_id,
+                        photo=f,
+                        caption="Setup Video (preview)\nTap below to watch:",
+                        reply_markup=video_buttons,
+                    )
+            else:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="▶️ Setup video:\nTap below to watch:",
+                    reply_markup=video_buttons,
+                )
+    else:
+        # Fallback: preview + link (cannot guarantee in-app)
+        video_buttons = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("▶️ Watch setup video", url=SETUP_VIDEO_LINK)]]
+        )
+        if _path_exists(SETUP_VIDEO_PREVIEW):
             with open(Path(SETUP_VIDEO_PREVIEW), "rb") as f:
                 await context.bot.send_photo(
                     chat_id=query.message.chat_id,
@@ -271,19 +307,12 @@ async def terms_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     caption="Setup Video (preview)\nTap below to watch:",
                     reply_markup=video_buttons,
                 )
-        except Exception as e:
-            log.warning("Failed to send SETUP_VIDEO_PREVIEW: %s", e)
+        else:
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text="▶️ Setup video:\nTap below to watch:",
                 reply_markup=video_buttons,
             )
-    else:
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text="▶️ Setup video:\nTap below to watch:",
-            reply_markup=video_buttons,
-        )
 
     context.user_data.clear()
     return ConversationHandler.END
