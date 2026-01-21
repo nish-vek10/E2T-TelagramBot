@@ -1,7 +1,10 @@
+# morning_missive/src/missive/render/template.py
+
 from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict, List
+import re
 
 from missive.providers.prices_oanda import OandaPrice
 from missive.providers.calendar_tradingview import TVEvent
@@ -98,11 +101,13 @@ def _fmt_time_gmt(dt_utc: datetime) -> str:
     return dt_utc.astimezone(ZoneInfo("UTC")).strftime("%H:%M")
 
 def _impact_bar(imp: int) -> str:
-    return "███" if imp == 1 else "██ "
+    # Rating-style impact bar (Telegram-safe, consistent width)
+    return "★★★" if imp == 1 else "★★☆"
 
 def _flag_tag(cc: str) -> str:
     cc = (cc or "").upper()
     return {
+        "EU": "🇪🇺 EU",
         "GB": "🇬🇧 UK",
         "US": "🇺🇸 US",
         "CN": "🇨🇳 CN",
@@ -112,13 +117,25 @@ def _flag_tag(cc: str) -> str:
     }.get(cc, cc)
 
 def _session_bucket(dt_utc: datetime) -> str:
-    # GMT buckets (simple + desk-friendly)
-    h = dt_utc.astimezone(ZoneInfo("UTC")).hour
-    if h < 7:
+    # GMT bucket rules (exact as requested)
+    t = dt_utc.astimezone(ZoneInfo("UTC"))
+    h = t.hour
+    m = t.minute
+
+    # 00:00–06:59
+    if (h < 7):
         return "ASIA"
-    if h < 13:
+
+    # 07:00–13:00 (inclusive)
+    if (h < 13) or (h == 13 and m == 0):
         return "EU"
-    return "US"
+
+    # 13:01–22:00 (inclusive)
+    if (h < 22) or (h == 22 and m == 0):
+        return "US"
+
+    # 22:01–23:59
+    return "POST"
 
 def _render_calendar_blocks(cal_events: List["TVEvent"]) -> tuple[str, str]:
     # TradingView calendar feed is best used for focus events by time.
@@ -140,11 +157,12 @@ def _render_calendar_blocks(cal_events: List["TVEvent"]) -> tuple[str, str]:
     return ("\n".join(major) if major else "N/A", "N/A")
 
 
-def _render_focus_sessions(cal_events: List["TVEvent"]) -> tuple[str, str, str]:
+def _render_focus_sessions(cal_events: List["TVEvent"]) -> tuple[str, str, str, str]:
     if not cal_events:
-        return ("N/A", "N/A", "N/A")
+        return ("N/A", "N/A", "N/A", "N/A")
 
-    eu, us, asia = [], [], []
+    asia, eu, us, post = [], [], [], []
+
     for e in cal_events:
         t = _fmt_time_gmt(e.dt_utc)
         cc_disp = _flag_tag(e.country)
@@ -156,13 +174,16 @@ def _render_focus_sessions(cal_events: List["TVEvent"]) -> tuple[str, str, str]:
             asia.append(line)
         elif bucket == "EU":
             eu.append(line)
-        else:
+        elif bucket == "US":
             us.append(line)
+        else:
+            post.append(line)
 
     return (
+        "\n".join(asia[:10]) if asia else "N/A",
         "\n".join(eu[:10]) if eu else "N/A",
         "\n".join(us[:10]) if us else "N/A",
-        "\n".join(asia[:10]) if asia else "N/A",
+        "\n".join(post[:10]) if post else "N/A",
     )
 
 
@@ -172,58 +193,104 @@ def build_message(
     prices: Dict[str, OandaPrice],
     pulse_text: str,
     headline_lines: List[str],
+    papers_lines: List[str],
     cal_events: List[TVEvent],
 ) -> str:
 
     now = datetime.now(tz=ZoneInfo(tz))
     date_str = now.strftime("%a %d %b %Y").upper()
 
+    sep = "────────────────────────────────────────"
+
     pricing_block = _pricing_table(prices)
 
     hl_lines = []
     for x in headline_lines[:8]:
-        x = x.rstrip(".")
-        hl_lines.append(f"• {x}.")
+        x = (x or "").strip()
+
+        # If headline ends with [SRC], put the period BEFORE the tag and never after the tag.
+        m = re.search(r"\s*(\[[A-Z0-9_\-]+\])\s*$", x)
+        if m:
+            tag = m.group(1)
+            body = x[:m.start()].rstrip()
+            body = re.sub(r"[\s\.\,;:!\?]+$", "", body).strip()
+            hl_lines.append(f"• {body}. {tag}")
+        else:
+            body = re.sub(r"[\s\.\,;:!\?]+$", "", x).strip()
+            hl_lines.append(f"• {body}.")
 
     if not hl_lines:
         hl_lines = ["• NO HEADLINES RETURNED — CHECK PERPLEXITY"]
 
-    eu_block, us_block, asia_block = _render_focus_sessions(cal_events)
+    asia_block, eu_block, us_block, post_block = _render_focus_sessions(cal_events)
 
-    if eu_block == "N/A" and us_block == "N/A" and asia_block == "N/A":
-        # user-friendly fallback message
-        eu_block = "NO MED/HIGH-IMPACT EVENTS IN NEXT WINDOW."
-        us_block = "NO MED/HIGH-IMPACT EVENTS IN NEXT WINDOW."
-        asia_block = "NO MED/HIGH-IMPACT EVENTS IN NEXT WINDOW."
+    if asia_block == "N/A" and eu_block == "N/A" and us_block == "N/A" and post_block == "N/A":
+        msg0 = "NO MED/HIGH-IMPACT EVENTS IN NEXT WINDOW."
+        asia_block = msg0
+        eu_block = msg0
+        us_block = msg0
+        post_block = msg0
+
+    papers_out = []
+    for x in (papers_lines or [])[:4]:
+        x = (x or "").strip()
+        if not x:
+            continue
+
+        # Same formatting rule as headlines: "• sentence. [SRC]" (dot before tag)
+        m = re.search(r"\s*(\[[A-Z0-9_\-]+\])\s*$", x)
+        if m:
+            tag = m.group(1)
+            body = x[:m.start()].rstrip()
+            body = re.sub(r"[\s\.\,;:!\?]+$", "", body).strip()
+            papers_out.append(f"• {body}. {tag}")
+        else:
+            body = re.sub(r"[\s\.\,;:!\?]+$", "", x).strip()
+            papers_out.append(f"• {body}.")
+
+    while len(papers_out) < 4:
+        papers_out.append("• N/A. [RTRS]")
+
+    papers_block = "\n".join(papers_out[:4])
 
 
     msg = f"""\
-MORNING MISSIVE + DAILY PLAYBOOK — {date_str}
+    {sep}
+*🌅 MORNING MISSIVE — {date_str}*
+{sep}
 
---- MARKET PULSE ---
-{pulse_text}
+*📊 MARKET PULSE 📊*\n
+{pulse_text} \n
+{sep}
 
---- KEY OVERNIGHT RATES ---
+*💹 KEY OVERNIGHT RATES 💹*\n
 {pricing_block}
+{sep}
 
---- TOP OVERNIGHT HEADLINES ---
-{chr(10).join(hl_lines)}
+*🗞️ TOP OVERNIGHT HEADLINES 🗞️*\n
+{chr(10).join(hl_lines)} \n
+{sep}
 
---- FOCUS EVENTS — TODAY (GMT) ---
+*📅 FOCUS EVENTS — TODAY (GMT) 📅*
 
-ASIA / LATE:
+*ASIA SESSION:*
 {asia_block}
 
-EU SESSION:
+*EU SESSION:*
 {eu_block}
 
-US SESSION:
+*US SESSION:*
 {us_block}
 
+*POST MARKET / ASIA EARLY:*
+{post_block}
 
-TODAY’S PAPERS (OPTIONAL)
-N/A
+{sep}
 
-— TRADING DESK / STAY DISCIPLINED INTO THE DATA WINDOWS.
+*📰 TODAY’S PAPERS 📰*
+{papers_block} \n
+{sep}
+*⚠️ TRADING DESK / STAY DISCIPLINED INTO THE DATA WINDOWS. RESEARCH AND INFORMATION PURPOSES ONLY. NOT INVESTMENT ADVICE.*
+{sep}
 """
     return msg.strip()

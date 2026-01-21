@@ -1,3 +1,5 @@
+# morning_missive/src/missive/providers/calendar_tradingview.py
+
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -86,54 +88,16 @@ def fetch_calendar_today_high_impact() -> List[TVEvent]:
     if isinstance(data, dict):
         js = data.get("events") or data.get("result") or []
 
-        # TEMP DEBUG: show all GB events returned in this window with their importance
-        gb_rows = [
-            (e.get("date"), e.get("title"), e.get("indicator"), e.get("importance"))
-            for e in js
-            if (e.get("country") or "").strip().upper() == "GB"
-        ]
-        print("[TV] GB rows returned:", len(gb_rows))
-        for row in gb_rows[:25]:
-            print("[TV][GB]", row)
-
-        imps = sorted({
-            str(e.get("importance"))
-            for e in js
-            if (e.get("country") or "").strip().upper() in _ALLOWED
-        })
-        print("[TV] unique importance for allowed:", imps)
-
-        # TEMP DEBUG: show all US events returned in this window with their importance
-        us_rows = [
-            (e.get("date"), e.get("title"), e.get("indicator"), e.get("importance"))
-            for e in js
-            if (e.get("country") or "").strip().upper() == "US"
-        ]
-        print("[TV] US rows returned:", len(us_rows))
-        for row in us_rows[:25]:
-            print("[TV][US]", row)
-
-
     elif isinstance(data, list):
         js = data
     else:
         js = []
-
-    print("[TV] sample:", js[0] if js else "EMPTY")
-    print("[TV] allowed-country count:", sum(1 for e in js if (e.get("country") or "").strip().upper() in _ALLOWED))
 
     def _to_int(v, default=-999):
         try:
             return int(v)
         except Exception:
             return default
-
-    print("[TV] allowed+imp(0/1) count:", sum(
-        1 for e in js
-        if (e.get("country") or "").strip().upper() in _ALLOWED
-        and _to_int(e.get("importance"), -999) in _ALLOWED_IMP
-    ))
-
 
     out: List[TVEvent] = []
     seen = set()

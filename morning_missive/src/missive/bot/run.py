@@ -1,3 +1,5 @@
+# morning_missive/src/missive/bot/run.py
+
 from __future__ import annotations
 
 import sys
@@ -8,7 +10,7 @@ from missive.bot.scheduler import start_daily
 from missive.bot.telegram_client import send_message
 
 from missive.providers.calendar_tradingview import fetch_calendar_today_high_impact
-from missive.providers.headlines_perplexity import fetch_market_pulse_and_headlines
+from missive.providers.headlines_perplexity import fetch_market_pulse_and_headlines, fetch_todays_papers
 
 
 def build_once() -> str:
@@ -23,16 +25,19 @@ def build_once() -> str:
 
     cal_events = fetch_calendar_today_high_impact()
 
-
     pulse, px_headlines = fetch_market_pulse_and_headlines()
     pulse_text = pulse.text.strip() if pulse.text else "AWAITING MACRO SIGNALS."
     headline_lines = [h.text for h in px_headlines]
+
+    papers = fetch_todays_papers()
+    papers_lines = papers.lines
 
     return build_message(
         tz=s.TZ,
         prices=prices,
         pulse_text=pulse_text,
         headline_lines=headline_lines,
+        papers_lines=papers_lines,
         cal_events=cal_events,
     )
 
