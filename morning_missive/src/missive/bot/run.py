@@ -52,7 +52,13 @@ def post_once() -> None:
         print("\n==================================================\n")
         return
 
-    send_message(s.MISSIVE_BOT_TOKEN, s.MISSIVE_CHAT_ID, msg)
+    send_message(
+        s.MISSIVE_BOT_TOKEN,
+        s.MISSIVE_CHAT_ID,
+        msg,
+        thread_id=(s.MISSIVE_THREAD_ID if s.MISSIVE_THREAD_ID > 0 else None),
+    )
+
     print("[OK] Missive posted.")
 
 def main() -> None:

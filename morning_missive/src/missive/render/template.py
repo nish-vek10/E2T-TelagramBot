@@ -267,7 +267,7 @@ def build_message(
 {pricing_block}
 {sep}
 
-*🗞️ TOP OVERNIGHT HEADLINES 🗞️*\n
+*🗞️ TOP HEADLINES 🗞️*\n
 {chr(10).join(hl_lines)} \n
 {sep}
 

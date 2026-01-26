@@ -35,6 +35,7 @@ class Settings:
     # Telegram
     MISSIVE_BOT_TOKEN: str = _s("MISSIVE_BOT_TOKEN")
     MISSIVE_CHAT_ID: str = _s("MISSIVE_CHAT_ID")
+    MISSIVE_THREAD_ID: int = _i("MISSIVE_THREAD_ID", 0)  # 0 = no topic/thread
     MISSIVE_DRY_RUN: bool = _b("MISSIVE_DRY_RUN", True)
 
     # Schedule
