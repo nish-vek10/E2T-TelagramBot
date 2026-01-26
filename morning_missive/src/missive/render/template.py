@@ -200,7 +200,7 @@ def build_message(
     now = datetime.now(tz=ZoneInfo(tz))
     date_str = now.strftime("%a %d %b %Y").upper()
 
-    sep = "─────────────────"
+    sep = "────────────"
 
     pricing_block = _pricing_table(prices)
 
@@ -255,7 +255,6 @@ def build_message(
 
 
     msg = f"""\
-    {sep}
 *🌅 MORNING MISSIVE*
 *📅 {date_str}*
 {sep}
