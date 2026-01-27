@@ -5,3 +5,5 @@ aiosqlite
 APScheduler
 requests
 PyYAML
+httpx
+tzdata
