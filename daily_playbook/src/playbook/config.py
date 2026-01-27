@@ -40,21 +40,25 @@ class PlaybookConfig:
 
     @staticmethod
     def load() -> "PlaybookConfig":
-        # Load .env only if it exists locally (Heroku won't have it)
-        p = Path(__file__).resolve()
-        env_path = None
-        for parent in [p.parent] + list(p.parents):
-            candidate = parent / ".env"
-            if candidate.exists():
-                env_path = candidate
-                break
 
-        if env_path is not None:
-            # Do NOT override real env vars (Heroku)
-            load_dotenv(env_path, override=False)
-            print(f"[daily_playbook] Loaded .env from: {env_path}")
+        # Load .env ONLY locally (Heroku sets DYNO env var)
+        if os.getenv("DYNO"):
+            print("[daily_playbook] NOTE: Running on Heroku (DYNO set) — skipping .env load.")
         else:
-            print("[daily_playbook] NOTE: .env not found (expected on Heroku).")
+            # Walk upwards until we find .env (local dev only)
+            p = Path(__file__).resolve()
+            env_path = None
+            for parent in [p.parent] + list(p.parents):
+                candidate = parent / ".env"
+                if candidate.exists():
+                    env_path = candidate
+                    break
+
+            if env_path is not None:
+                load_dotenv(env_path, override=False)
+                print(f"[daily_playbook] Loaded .env from: {env_path}")
+            else:
+                print("[daily_playbook] NOTE: .env not found (local).")
 
         chat_id = _get_env("PLAYBOOK_CHAT_ID", "")
         if not chat_id:

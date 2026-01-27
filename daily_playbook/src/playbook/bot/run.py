@@ -38,11 +38,7 @@ async def run_once(cfg: PlaybookConfig) -> None:
     logger.info(f"CHAT_ID = {cfg.chat_id}")
     logger.info(f"DRY_RUN = {cfg.dry_run}")
 
-    print("\n" + "=" * 90)
-    print("DAILY PLAYBOOK OUTPUT (DRY RUN)" if cfg.dry_run else "DAILY PLAYBOOK OUTPUT (LIVE)")
-    print("=" * 90 + "\n")
-    print(msg)
-    print("\n" + "=" * 90 + "\n")
+    logger.info("Playbook message built successfully.")
 
     send_live = _get_env("PLAYBOOK_SEND_TELEGRAM", "0").lower() in ("1", "true", "yes", "on")
     bot_token = _get_env("PLAYBOOK_BOT_TOKEN", "")
