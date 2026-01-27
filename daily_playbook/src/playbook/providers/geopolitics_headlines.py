@@ -28,7 +28,7 @@ Daily Macro & Trading Playbook – <DATE>
 🟢 Risk-On: <one line>
 🔴 Risk-Off: <one line>
 
-Pick 4 to 6 EVENTS (macro + geopolitical). For EACH EVENT:
+Pick 4 to 5 EVENTS (macro + geopolitical). For EACH EVENT:
 EVENT X: <Event title>
 Context:
 - <bullet 1>
@@ -37,19 +37,21 @@ Context:
 
 Then provide EXACTLY 3 scenario rows under each event in this row format (one row per line):
 • <Headline>
-  - Trade: <...>
+  - Focus: <...>
   - Rationale: <...>
 
 RULES FOR THE 3 ROWS:
 - Headline: short, like a wire headline (no quotes needed)
-- Trade: clear trade setup (e.g., Buy S&P / Sell Gold)
-- Rationale: 6–12 words
+- Focus: describe likely directional moves (NOT advice). Example: "Equities firmer; yields higher; gold softer"
+- Rationale: 6–10 words
 
 CONSTRAINTS:
+- Write "Context:" on its own line (not on the event line).
 - Do NOT include “Key Markets & Levels” section
 - Do NOT include numeric citations like [1] or [2]
 - You MAY use source tags only at the end of headlines inside parentheses, e.g. (Reuters), (FT), (WSJ) — optional
 - Keep formatting Telegram-friendly: headings on their own line, blank line between sections
+- Do NOT give trading instructions. Do NOT use "Buy/Sell/Long/Short". Use neutral market language only.
 - Do NOT include sentiment column.
 - Exactly 3 rows per event.
 

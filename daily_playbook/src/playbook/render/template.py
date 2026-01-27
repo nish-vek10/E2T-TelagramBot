@@ -17,6 +17,12 @@ RE_ROW = re.compile(
 
 SENT_TOKENS = ("🟢 Risk-On", "🔴 Risk-Off", "⚠️ Mixed")
 
+# --- Handle different dash characters the model may use (looks like "-" but isn't) ---
+_DASHES = r"\-\u2010\u2011\u2012\u2013\u2212"  # hyphen, hyphen variants, en-dash, minus
+
+RE_FOCUS_LINE = re.compile(rf"^[{_DASHES}]\s*(?:focus|trade|market reaction)\s*:\s*(.+)$", re.IGNORECASE)
+RE_RATIONALE_LINE = re.compile(rf"^[{_DASHES}]\s*rationale\s*:\s*(.+)$", re.IGNORECASE)
+
 
 # ---------------- MarkdownV2 escaping ----------------
 _MDv2_SPECIALS = r"_*[]()~`>#+-=|{}.!\\"
@@ -46,6 +52,26 @@ def _normalise_header_lines(lines: list[str]) -> list[str]:
     for ln in lines:
         ln = ln.strip()
 
+        # --- Emoji token normalisation (model may include emojis) ---
+        # Convert emoji-prefixed headings into canonical tokens the parser expects.
+        ln = re.sub(r"^\s*🌍\s*EVENT\b", "EVENT", ln, flags=re.IGNORECASE)
+        ln = re.sub(r"^\s*📝\s*CONTEXT\s*:\s*", "Context:", ln, flags=re.IGNORECASE)
+
+        # --- If Context: is appended to an EVENT line, split it onto its own line ---
+        # e.g. "EVENT 1: ... Context:"  -> "EVENT 1: ...\nContext:"
+        ln = re.sub(r"\s+Context\s*:\s*", "\nContext:", ln, flags=re.IGNORECASE)
+
+        # Also handle emoji context used inline (rare):
+        ln = re.sub(r"\s+📝\s*CONTEXT\s*:\s*", "\nContext:", ln, flags=re.IGNORECASE)
+
+        # Convert emoji scenario marker into canonical bullet marker
+        ln = re.sub(r"^\s*🧩\s*", "• ", ln)
+
+        # If a scenario line contains inline "- Focus:" and "- Rationale:" on the same line,
+        # force them onto their own lines.
+        ln = re.sub(r"\s+-\s*Focus\s*:", "\n- Focus:", ln, flags=re.IGNORECASE)
+        ln = re.sub(r"\s+-\s*Rationale\s*:", "\n- Rationale:", ln, flags=re.IGNORECASE)
+
         # Fix cases where a context bullet ends then "Headline:" continues same line
         ln = ln.replace(" pre-Fed Headline:", "\nHeadline:")
         ln = ln.replace(" odds Headline:", "\nHeadline:")
@@ -73,7 +99,9 @@ def _normalise_header_lines(lines: list[str]) -> list[str]:
         # Force scenario markers onto new lines if Perplexity collapses them into context
         ln = re.sub(r"\s+•\s*", "\n• ", ln)
         ln = re.sub(r"\s+-\s*Trade:", "\n- Trade:", ln)
-        ln = re.sub(r"\s+-\s*Rationale:", "\n- Rationale:", ln)
+        ln = re.sub(r"\s+-\s*FOCUS:", "\n- FOCUS:", ln)
+        ln = re.sub(r"\s+-\s*Market Reaction:", "\n- Market Reaction:", ln)
+        ln = re.sub(r"\s+-\s*RATIONALE:", "\n- RATIONALE:", ln)
 
         # Split if we inserted a newline above
         if "\n" in ln:
@@ -199,7 +227,7 @@ def _truncate_events(lines: list[str]) -> list[str]:
             out.append(line)
             continue
 
-        if line == "Context:":
+        if line in ("Context:", "📝CONTEXT:"):
             in_context = True
             out.append(line)
             continue
@@ -223,13 +251,14 @@ def _truncate_events(lines: list[str]) -> list[str]:
             continue
 
         # Keep the two scenario detail lines under each headline
-        if line.startswith("- Trade:") or line.startswith("- Rationale:"):
+        if RE_FOCUS_LINE.match(line) or RE_RATIONALE_LINE.match(line):
             out.append(line)
             continue
 
         # Also allow indented versions (some models indent with spaces)
-        if line.startswith("  - Trade:") or line.startswith("  - Rationale:"):
-            out.append(line.lstrip())  # normalise
+        norm = line.lstrip()
+        if RE_FOCUS_LINE.match(norm) or RE_RATIONALE_LINE.match(norm):
+            out.append(norm)  # normalise
             continue
 
         # ignore everything else inside event
@@ -288,16 +317,33 @@ def render_playbook(raw_text: str) -> str:
         # Event heading
         if line.startswith("EVENT "):
             if in_event:
-                out_lines.append("")
+                if out_lines and out_lines[-1] != "":
+                    out_lines.append("")
                 out_lines.append("────────────")
             in_event = True
 
-            out_lines.append(mdv2_bold(line))
+            out_lines.append(mdv2_bold(f"🌍 {line}"))
             continue
 
         # Context label
         if line == "Context:":
-            out_lines.append(mdv2_italic("Context:"))
+            out_lines.append(mdv2_italic("📝CONTEXT:"))
+            continue
+
+        # Scenario details (FOCUS / RATIONALE) — must be BEFORE generic "- " bullets
+        m_focus = RE_FOCUS_LINE.match(line)
+        if m_focus:
+            val = m_focus.group(1).strip()
+            out_lines.append(f"{mdv2_italic('🎯 FOCUS:')} {mdv2_escape(val)}")
+            last_was_context = False
+            continue
+
+        m_rat = RE_RATIONALE_LINE.match(line)
+        if m_rat:
+            val = m_rat.group(1).strip()
+            out_lines.append(f"{mdv2_italic('🧠 RATIONALE:')} {mdv2_escape(val)}")
+            out_lines.append("")  # breathing room after each scenario
+            last_was_context = False
             continue
 
         # Context bullets (escape leading "-")
@@ -309,31 +355,36 @@ def render_playbook(raw_text: str) -> str:
         # Scenario headline — add blank line after context
         if line.startswith("• "):
             if last_was_context:
-                out_lines.append("")  # <-- THIS creates the visual gap
+                out_lines.append("")  # THIS creates the visual gap
                 last_was_context = False
 
-            out_lines.append(f"• {mdv2_bold(line[2:])}")
+            out_lines.append(f"{mdv2_escape('🧩')} {mdv2_bold(line[2:])}")
             continue
 
-        # Scenario details — indented + bold labels
-        if line.startswith("- Trade:"):
-            val = line.split(":", 1)[1].strip()
-            out_lines.append(f"  \\- {mdv2_bold('Trade')}: {mdv2_escape(val)}")
+        # Scenario details
+        m_focus = RE_FOCUS_LINE.match(line)
+        if m_focus:
+            val = m_focus.group(1).strip()
+            out_lines.append(f"  {mdv2_italic('🎯 FOCUS:')} {mdv2_escape(val)}")
             last_was_context = False
             continue
 
-        if line.startswith("- Rationale:"):
-            val = line.split(":", 1)[1].strip()
-            out_lines.append(f"  \\- {mdv2_bold('Rationale')}: {mdv2_escape(val)}")
+        m_rat = RE_RATIONALE_LINE.match(line)
+        if m_rat:
+            val = m_rat.group(1).strip()
+            out_lines.append(f"  {mdv2_italic('🧠 RATIONALE:')} {mdv2_escape(val)}")
             last_was_context = False
             continue
 
         # Anything else: ignore for cleanliness
         continue
 
-    out_lines.append("")
+    # Footer separator (avoid double blank)
+    if out_lines and out_lines[-1] != "":
+        out_lines.append("")
     out_lines.append("────────────")
-    out_lines.append(mdv2_italic("⚠️TRADING DESK / SCENARIO-BASED. RESEARCH AND INFORMATION PURPOSES ONLY. NOT INVESTMENT ADVICE."))
+    out_lines.append(mdv2_italic(
+        "⚠️SCENARIO-BASED MARKET COMMENTARY FOR RESEARCH AND INFORMATION PURPOSES ONLY. NOT INVESTMENT ADVICE."))
     out_lines.append("────────────")
 
     out = "\n".join(out_lines)
