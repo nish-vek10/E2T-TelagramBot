@@ -38,7 +38,7 @@ SETUP_VIDEO_LINK = os.getenv("SETUP_VIDEO_LINK", "").strip()  # fallback if no m
 HELP_EMAIL = os.getenv("HELP_EMAIL", "support@example.com").strip()
 TELEGRAM_SUPPORT = os.getenv("TELEGRAM_SUPPORT", "@educate2trade").strip()
 
-LEADS_DIR = os.getenv("LEADS_DIR", "./data").strip()
+LEADS_DIR = os.getenv("LEADS_DIR", "./app_data").strip()
 
 REGIONS = ["UK/EU", "Middle East", "Africa", "Asia", "Americas"]
 

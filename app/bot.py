@@ -28,7 +28,7 @@ STARTUP_PDF = os.getenv("STARTUP_PDF", "").strip()
 HELP_EMAIL = os.getenv("HELP_EMAIL", "support@example.com").strip()
 TELEGRAM_SUPPORT = os.getenv("TELEGRAM_SUPPORT", "@support").strip()
 
-LEADS_DIR = os.getenv("LEADS_DIR", "./data").strip()
+LEADS_DIR = os.getenv("LEADS_DIR", "./app_data").strip()
 
 PLATFORMS = ["MT4", "MT5"]
 REGIONS = ["UK/EU", "Middle East", "Africa", "Asia", "Americas"]

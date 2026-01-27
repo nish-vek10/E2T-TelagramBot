@@ -32,7 +32,7 @@ def fetch_market_pulse_and_headlines() -> Tuple[PXPulse, List[PXHeadline]]:
     prompt = """
 You are a global macro trading desk assistant. You MUST use web research to produce a genuine morning market note for TODAY.
 
-DO NOT mention limitations, missing data, job postings, or "search results". Do not include any disclaimers.
+DO NOT mention limitations, missing app_data, job postings, or "search results". Do not include any disclaimers.
 If you cannot find something, omit it—do not explain why.
 
 TASK:

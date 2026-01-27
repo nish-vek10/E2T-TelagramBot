@@ -14,12 +14,12 @@ log = get_logger("missive_build")
 
 # morning_missive/ (this file is morning_missive/src/missive/bot/build.py)
 ROOT = Path(__file__).resolve().parents[3]  # -> morning_missive/
-DATA_DIR = ROOT / "data"
+DATA_DIR = ROOT / "app_data"
 
 
 def _load_focus_events() -> dict:
     """
-    Optional YAML: morning_missive/data/events.yaml
+    Optional YAML: morning_missive/app_data/events.yaml
       eu: ["09:30 — UK: CPI", ...]
       us: ["13:30 — US: CPI", ...]
       asia: ["00:30 — AUS: CPI", ...]
@@ -38,7 +38,7 @@ def _load_focus_events() -> dict:
 
 def _load_bond_supply() -> list[str]:
     """
-    Optional YAML: morning_missive/data/bonds.yaml
+    Optional YAML: morning_missive/app_data/bonds.yaml
       items:
         - "UK DMO: ..."
         - "UST: ..."

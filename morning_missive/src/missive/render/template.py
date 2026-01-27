@@ -139,7 +139,7 @@ def _session_bucket(dt_utc: datetime) -> str:
 
 def _render_calendar_blocks(cal_events: List["TVEvent"]) -> tuple[str, str]:
     # TradingView calendar feed is best used for focus events by time.
-    # For now: major events = list of event names; data releases = N/A (no reliable A/F/P).
+    # For now: major events = list of event names; app_data releases = N/A (no reliable A/F/P).
     if not cal_events:
         return ("N/A", "N/A")
 
