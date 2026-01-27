@@ -21,7 +21,7 @@ def _get_env(name: str, default: str = "") -> str:
 async def run_once(cfg: PlaybookConfig) -> None:
     msg = build_message(cfg)
 
-    logger.info(f"CHAT_ID (test) = {cfg.chat_id}")
+    logger.info(f"CHAT_ID = {cfg.chat_id}")
     logger.info(f"DRY_RUN = {cfg.dry_run}")
 
     print("\n" + "=" * 90)
@@ -44,7 +44,10 @@ def main() -> int:
     setup_logger()
     cfg = PlaybookConfig.load()
 
-    if cfg.run_once:
+    run_once_flag = _get_env("PLAYBOOK_RUN_ONCE", "0").lower() in ("1", "true", "yes", "on")
+    logger.info(f"RUN_ONCE env = {_get_env('PLAYBOOK_RUN_ONCE', '0')} -> {run_once_flag}")
+
+    if run_once_flag:
         asyncio.run(run_once(cfg))
         return 0
 
@@ -54,6 +57,7 @@ def main() -> int:
     async def forever():
         logger.info(f"Scheduling Daily Playbook at {cfg.post_time} ({cfg.tz})")
         start_daily_job(tz=cfg.tz, hhmm=cfg.post_time, job_coro=job)
+        logger.info("Scheduler started; entering keepalive loop.")
         while True:
             await asyncio.sleep(3600)
 
