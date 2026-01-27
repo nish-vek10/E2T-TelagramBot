@@ -361,21 +361,6 @@ def render_playbook(raw_text: str) -> str:
             out_lines.append(f"{mdv2_escape('🧩')} {mdv2_bold(line[2:])}")
             continue
 
-        # Scenario details
-        m_focus = RE_FOCUS_LINE.match(line)
-        if m_focus:
-            val = m_focus.group(1).strip()
-            out_lines.append(f"  {mdv2_italic('🎯 FOCUS:')} {mdv2_escape(val)}")
-            last_was_context = False
-            continue
-
-        m_rat = RE_RATIONALE_LINE.match(line)
-        if m_rat:
-            val = m_rat.group(1).strip()
-            out_lines.append(f"  {mdv2_italic('🧠 RATIONALE:')} {mdv2_escape(val)}")
-            last_was_context = False
-            continue
-
         # Anything else: ignore for cleanliness
         continue
 
