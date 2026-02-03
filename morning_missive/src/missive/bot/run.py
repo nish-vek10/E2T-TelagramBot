@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import os
 from missive.config import Settings
 from missive.providers.prices_oanda import fetch_prices
 from missive.render.template import build_message
@@ -11,9 +12,15 @@ from missive.bot.telegram_client import send_message
 
 from missive.providers.calendar_tradingview import fetch_calendar_today_high_impact
 from missive.providers.headlines_perplexity import fetch_market_pulse_and_headlines, fetch_todays_papers
+from missive.storage.supabase_client import get_supabase
+from missive.storage.save_missive import save_missive_to_supabase
 
 
-def build_once() -> str:
+
+def build_payload():
+    """
+    Returns (rendered_message, payload_parts) for saving to Supabase without re-parsing.
+    """
     s = Settings()
 
     prices = fetch_prices(
@@ -32,7 +39,7 @@ def build_once() -> str:
     papers = fetch_todays_papers()
     papers_lines = papers.lines
 
-    return build_message(
+    msg = build_message(
         tz=s.TZ,
         prices=prices,
         pulse_text=pulse_text,
@@ -41,17 +48,60 @@ def build_once() -> str:
         cal_events=cal_events,
     )
 
+    parts = {
+        "prices": prices,
+        "pulse_text": pulse_text,
+        "headline_lines": headline_lines,
+        "papers_lines": papers_lines,
+        "cal_events": cal_events,
+    }
+    return msg, parts
+
+
+def build_once() -> str:
+    msg, _ = build_payload()
+    return msg
+
 
 def post_once() -> None:
     s = Settings()
-    msg = build_once()
+    msg, parts = build_payload()
 
-    if s.MISSIVE_DRY_RUN:
-        print("\n========== MISSIVE DRY RUN (NOT POSTING) ==========\n")
+    # Decide whether to save
+    save_enabled = bool(s.MISSIVE_SAVE_SUPABASE)
+    save_allowed_in_dry = bool(s.MISSIVE_SAVE_ON_DRY_RUN)
+
+    should_save = save_enabled and (save_allowed_in_dry or (not s.MISSIVE_DRY_RUN))
+
+    missive_id = None
+    if should_save:
+        supabase = get_supabase()
+        missive_id = save_missive_to_supabase(
+            supabase=supabase,
+            tz=s.TZ,
+            post_hour=s.POST_HOUR,
+            post_minute=s.POST_MINUTE,
+            telegram_chat_id=s.MISSIVE_CHAT_ID,
+            rendered_text=msg,
+            pulse_text=parts["pulse_text"],
+            prices=parts["prices"],
+            headline_lines=parts["headline_lines"],
+            papers_lines=parts["papers_lines"],
+            cal_events=parts["cal_events"],
+            posted_to_telegram=(not s.MISSIVE_DRY_RUN and not s.MISSIVE_SAVE_ONLY),
+        )
+        print(f"[OK] Supabase saved missive_id={missive_id}")
+
+    # DRY RUN behaviour remains, unless SAVE_ONLY is on (test mode)
+    if s.MISSIVE_DRY_RUN or s.MISSIVE_SAVE_ONLY:
+        print("\n========== MISSIVE DRY RUN ==========\n")
         print(msg)
-        print("\n==================================================\n")
+        print("\n====================================\n")
+        if s.MISSIVE_SAVE_ONLY:
+            print("[OK] SAVE_ONLY=1 → Skipping Telegram send.")
         return
 
+    # Live send (unchanged)
     send_message(
         s.MISSIVE_BOT_TOKEN,
         s.MISSIVE_CHAT_ID,
@@ -60,6 +110,7 @@ def post_once() -> None:
     )
 
     print("[OK] Missive posted.")
+
 
 def main() -> None:
     mode = (sys.argv[1] if len(sys.argv) > 1 else "serve").lower()

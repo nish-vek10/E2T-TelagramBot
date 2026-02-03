@@ -11,6 +11,9 @@ from loguru import logger
 from playbook.config import PlaybookConfig
 from playbook.utils.log import setup_logger
 from playbook.bot.build import build_message
+from playbook.bot.build import build_message_and_raw
+from playbook.storage.supabase_client import get_supabase
+from playbook.storage.save_playbook import save_playbook_to_supabase
 from playbook.bot.telegram_client import send_message
 
 
@@ -33,15 +36,39 @@ def _seconds_until_next(hhmm: str, tz: str) -> int:
 
 
 async def run_once(cfg: PlaybookConfig) -> None:
-    msg = build_message(cfg)
+    msg, raw = build_message_and_raw(cfg)
 
     logger.info(f"CHAT_ID = {cfg.chat_id}")
     logger.info(f"DRY_RUN = {cfg.dry_run}")
-
     logger.info("Playbook message built successfully.")
 
+    # ---- Supabase save (opt-in) ----
+    save_enabled = _get_env("PLAYBOOK_SAVE_SUPABASE", "0").lower() in ("1", "true", "yes", "on")
+    save_on_dry = _get_env("PLAYBOOK_SAVE_ON_DRY_RUN", "0").lower() in ("1", "true", "yes", "on")
+    save_only = _get_env("PLAYBOOK_SAVE_ONLY", "0").lower() in ("1", "true", "yes", "on")
+
+    should_save = save_enabled and (save_on_dry or (not cfg.dry_run))
+    if should_save:
+        supabase = get_supabase()
+        playbook_id = save_playbook_to_supabase(
+            supabase=supabase,
+            tz=cfg.tz,
+            post_time=cfg.post_time,
+            telegram_chat_id=cfg.chat_id,
+            rendered_text=msg,
+            raw_text=raw,
+            posted_to_telegram=(not cfg.dry_run and not save_only),
+        )
+        logger.info(f"[OK] Supabase saved playbook_id={playbook_id}")
+
+    # ---- Telegram send ----
     send_live = _get_env("PLAYBOOK_SEND_TELEGRAM", "0").lower() in ("1", "true", "yes", "on")
     bot_token = _get_env("PLAYBOOK_BOT_TOKEN", "")
+
+    # Save-only test mode: never send TG
+    if save_only:
+        logger.info("[OK] PLAYBOOK_SAVE_ONLY=1 → Skipping Telegram send.")
+        return
 
     if send_live:
         if not bot_token:

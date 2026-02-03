@@ -60,6 +60,13 @@ class Settings:
     )
     HEADLINE_DOMAINS: str = _s("MISSIVE_HEADLINE_DOMAINS", "reuters.com,bloomberg.com,cnbc.com,ft.com,wsj.com")
 
+    # Supabase storage (default OFF)
+    SUPABASE_URL: str = _s("SUPABASE_URL")
+    SUPABASE_SERVICE_ROLE_KEY: str = _s("SUPABASE_SERVICE_ROLE_KEY")
+
+    MISSIVE_SAVE_SUPABASE: bool = _b("MISSIVE_SAVE_SUPABASE", False)
+    MISSIVE_SAVE_ON_DRY_RUN: bool = _b("MISSIVE_SAVE_ON_DRY_RUN", False)
+    MISSIVE_SAVE_ONLY: bool = _b("MISSIVE_SAVE_ONLY", False)
 
     @property
     def oanda_base_url(self) -> str:

@@ -7,3 +7,4 @@ requests
 PyYAML
 httpx
 tzdata
+supabase
