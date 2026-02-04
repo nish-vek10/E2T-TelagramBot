@@ -201,7 +201,7 @@ HEADLINES:
 def fetch_todays_papers() -> PXPapers:
     api_key = os.getenv("PERPLEXITY_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("Missing PERPLEXITY_API_KEY (set it in your root .env)")
+        raise RuntimeError("Missing PERPLEXITY_API_KEY (set it in the root .env)")
 
     prompt = """
 You are a global macro trading desk assistant.
