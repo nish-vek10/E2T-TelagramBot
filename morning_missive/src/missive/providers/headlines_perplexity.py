@@ -7,7 +7,9 @@ from typing import List, Tuple
 import os
 import re
 import requests
+import time
 
+from missive.utils.retry import retry
 
 @dataclass
 class PXHeadline:
@@ -226,91 +228,113 @@ PAPERS:
 - ...
 """.strip()
 
-    r = requests.post(
-        "https://api.perplexity.ai/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": "sonar-pro",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-            "top_p": 0.9,
-        },
-        timeout=30,
-    )
-    r.raise_for_status()
+    def _parse_lines(content: str) -> List[str]:
+        raw_bullets: List[str] = []
 
-    js = r.json()
-    content = js["choices"][0]["message"]["content"] or ""
+        for ln in content.splitlines():
+            s = ln.strip()
+            if not s:
+                continue
+            if s.startswith("- ") or s.startswith("• "):
+                raw_bullets.append(s[2:].strip())
 
+        lines: List[str] = []
+        for item in raw_bullets:
+            if not item:
+                continue
 
-    # Extract bullets under PAPERS / TODAY'S PAPERS / TODAY’S PAPERS.
-    # If the model ignores headers, fall back to first 4 bullets anywhere.
-    raw_bullets: List[str] = []
-    in_papers = False
+            # strip numeric citations like [1], [2], [1,2]
+            item = re.sub(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]", "", item).strip()
 
-
-    for ln in content.splitlines():
-        s = ln.strip()
-        if not s:
-            continue
-
-        u = s.upper()
-
-        # Accept multiple header variants
-        if u.startswith("PAPERS:") or u.startswith("TODAY'S PAPERS:") or u.startswith("TODAY’S PAPERS:"):
-            in_papers = True
-            continue
-
-        # Collect bullets either after header OR (fallback later) anywhere
-        if s.startswith("- ") or s.startswith("• "):
-            raw_bullets.append(s[2:].strip())
-            continue
-
-    # Prefer bullets after a papers header if present; otherwise fallback to any bullets
-    # If there was a header, the model usually puts papers bullets early, so just take first 8 bullets.
-    candidates = raw_bullets[:]
-
-    lines: List[str] = []
-    for item in candidates:
-        if not item:
-            continue
-
-        # strip numeric citations like [1], [2], [1,2]
-        item = re.sub(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]", "", item).strip()
-
-        # normalize trailing source tags to bracket form:
-        # "... WSJ" / "... (WSJ)" / "... [WSJ]" / with optional trailing dot -> "... [WSJ]"
-        m = re.search(r"\s*(?:\[(FT|WSJ|RTRS)\]|\((FT|WSJ|RTRS)\)|\b(FT|WSJ|RTRS)\b)\s*\.?\s*$", item, flags=re.I)
-        if m:
-            tag = (m.group(1) or m.group(2) or m.group(3) or "").upper()
-            # remove the matched tail (tag + optional dot/spaces)
-            item = re.sub(
+            # normalize trailing source tags to bracket form:
+            m = re.search(
                 r"\s*(?:\[(FT|WSJ|RTRS)\]|\((FT|WSJ|RTRS)\)|\b(FT|WSJ|RTRS)\b)\s*\.?\s*$",
-                "",
                 item,
                 flags=re.I,
-            ).rstrip()
-            item = item.rstrip(".").rstrip()
-            item = f"{item} [{tag}]"
+            )
+            if m:
+                tag = (m.group(1) or m.group(2) or m.group(3) or "").upper()
+                item = re.sub(
+                    r"\s*(?:\[(FT|WSJ|RTRS)\]|\((FT|WSJ|RTRS)\)|\b(FT|WSJ|RTRS)\b)\s*\.?\s*$",
+                    "",
+                    item,
+                    flags=re.I,
+                ).rstrip()
+                item = item.rstrip(".").rstrip()
+                item = f"{item} [{tag}]"
 
-        # ensure it ends with [TAG]
-        if not re.search(r"\[(FT|WSJ|RTRS)\]\s*$", item, flags=re.I):
-            # if model forgot tag, default to RTRS rather than failing
-            item = item.rstrip(".").strip() + " [RTRS]"
+            # ensure it ends with [TAG]
+            if not re.search(r"\[(FT|WSJ|RTRS)\]\s*$", item, flags=re.I):
+                item = item.rstrip(".").strip() + " [RTRS]"
 
-        # remove punctuation AFTER the tag
-        item = re.sub(r"(\[(?:FT|WSJ|RTRS)\])[\s\.\,;:!\?]+$", r"\1", item, flags=re.I).strip()
+            # remove punctuation AFTER the tag
+            item = re.sub(r"(\[(?:FT|WSJ|RTRS)\])[\s\.\,;:!\?]+$", r"\1", item, flags=re.I).strip()
 
-        lines.append(item)
-        if len(lines) >= 4:
-            break
+            lines.append(item)
+            if len(lines) >= 4:
+                break
 
-    # hard guarantee exactly 4 lines
+        # de-dupe preserving order (prevents 4 identical "NO PAPER..." lines)
+        deduped: List[str] = []
+        seen = set()
+        for x in lines:
+            k = x.strip().lower()
+            if k not in seen:
+                seen.add(k)
+                deduped.append(x)
+
+        return deduped[:4]
+
+    def _is_bad(lines: List[str]) -> bool:
+        if not lines:
+            return True
+        joined = " ".join([x.lower() for x in lines])
+        bad_tokens = [
+            "no paper headlines returned",
+            "no headlines returned",
+            "no paper headlines available",
+            "n/a",
+        ]
+        # treat as bad if it’s basically placeholders / empty content
+        if all(("no paper" in x.lower() or "n/a" in x.lower()) for x in lines):
+            return True
+        return any(t in joined for t in bad_tokens) and len(lines) < 2
+
+    def _fetch_once() -> List[str]:
+        r = requests.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "sonar-pro",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.2,
+                "top_p": 0.9,
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        js = r.json()
+        content = js["choices"][0]["message"]["content"] or ""
+        return _parse_lines(content)
+
+    # 1) Try once, then retry a few times ONLY if bad/empty
+    lines = _fetch_once()
+    if _is_bad(lines):
+        try:
+            lines = retry(_fetch_once, attempts=3, base_sleep_s=1.0, max_sleep_s=6.0)
+        except Exception:
+            # ignore and fall back below
+            pass
+
+    # 2) Final fallback: always return clean 1-line fallback + pad with N/A tagged (not 4x same line)
     lines = lines[:4]
+    if not lines:
+        lines = ["NO PAPER HEADLINES RETURNED TODAY."]
+
     while len(lines) < 4:
-        lines.append("NO PAPER HEADLINES RETURNED — CHECK PERPLEXITY. [RTRS]")
+        lines.append("N/A.")
 
     return PXPapers(lines=lines)

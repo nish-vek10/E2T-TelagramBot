@@ -102,14 +102,33 @@ def post_once() -> None:
         return
 
     # Live send (unchanged)
-    send_message(
-        s.MISSIVE_BOT_TOKEN,
-        s.MISSIVE_CHAT_ID,
-        msg,
-        thread_id=(s.MISSIVE_THREAD_ID if s.MISSIVE_THREAD_ID > 0 else None),
-    )
+    chat_ids = [s.MISSIVE_CHAT_ID]
+    if s.MISSIVE_CHAT_ID_2:
+        chat_ids.append(s.MISSIVE_CHAT_ID_2)
 
-    print("[OK] Missive posted.")
+    sent_ok = 0
+    for cid in chat_ids:
+        thread_id = None
+        if cid == s.MISSIVE_CHAT_ID and s.MISSIVE_THREAD_ID > 0:
+            thread_id = s.MISSIVE_THREAD_ID
+
+        try:
+            send_message(
+                s.MISSIVE_BOT_TOKEN,
+                cid,
+                msg,
+                thread_id=thread_id,
+            )
+            sent_ok += 1
+            print(f"[OK] Sent missive to chat_id={cid}")
+        except Exception as e:
+            # Don't crash the whole run if 2nd chat fails
+            print(f"[WARN] Failed sending to chat_id={cid}: {e}")
+
+    if sent_ok > 0:
+        print("[OK] Missive posted.")
+    else:
+        raise RuntimeError("Missive was not sent to any chat IDs (all sends failed).")
 
 
 def main() -> None:

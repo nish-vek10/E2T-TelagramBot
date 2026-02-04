@@ -19,6 +19,42 @@ def _get(prices: Dict[str, OandaPrice], inst: str) -> float | None:
         return None
     return p.live_mid if p.live_mid is not None else p.daily_close
 
+def _normalize_src_tag(line: str) -> str:
+    """
+    Normalize trailing source tags so the renderer can always format them as [TAG].
+    Accepts: "... [WSJ]", "... (WSJ)", "... WSJ"
+    Returns: "... [WSJ]" (no trailing punctuation after the tag)
+    """
+    s = (line or "").strip()
+    if not s:
+        return s
+
+    # If already has a trailing [TAG], keep it but normalize spacing/punct
+    m = re.search(r"\s*(\[[A-Z0-9_\-]{2,20}\])\s*\.?\s*$", s)
+    if m:
+        tag = m.group(1)
+        body = s[:m.start()].rstrip()
+        body = re.sub(r"[\s\.\,;:!\?]+$", "", body).strip()
+        return f"{body} {tag}"
+
+    # If trailing (TAG)
+    m = re.search(r"\s*\(([A-Z0-9_\-]{2,20})\)\s*\.?\s*$", s)
+    if m:
+        tag = m.group(1).upper()
+        body = s[:m.start()].rstrip()
+        body = re.sub(r"[\s\.\,;:!\?]+$", "", body).strip()
+        return f"{body} [{tag}]"
+
+    # If trailing bare token like "WSJ" / "RTRS" / "FT" / "BBG" / "FXL" etc.
+    m = re.search(r"\s+([A-Z]{2,12})\s*\.?\s*$", s)
+    if m:
+        tag = m.group(1).upper()
+        body = s[:m.start()].rstrip()
+        body = re.sub(r"[\s\.\,;:!\?]+$", "", body).strip()
+        return f"{body} [{tag}]"
+
+    return s
+
 def _alias(inst: str) -> str:
     # Desk-friendly names
     return {
@@ -206,7 +242,7 @@ def build_message(
 
     hl_lines = []
     for x in headline_lines[:8]:
-        x = (x or "").strip()
+        x = _normalize_src_tag((x or "").strip())
 
         # If headline ends with [SRC], put the period BEFORE the tag and never after the tag.
         m = re.search(r"\s*(\[[A-Z0-9_\-]+\])\s*$", x)
@@ -233,7 +269,8 @@ def build_message(
 
     papers_out = []
     for x in (papers_lines or [])[:4]:
-        x = (x or "").strip()
+        x = _normalize_src_tag((x or "").strip())
+
         if not x:
             continue
 
